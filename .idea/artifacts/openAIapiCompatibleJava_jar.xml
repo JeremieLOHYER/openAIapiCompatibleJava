@@ -1,0 +1,9 @@
+<component name="ArtifactManager">
+  <artifact type="jar" name="openAIapiCompatibleJava:jar">
+    <output-path>$PROJECT_DIR$/build</output-path>
+    <root id="archive" name="openAIapiCompatibleJava.jar">
+      <element id="module-output" name="openAIapiCompatibleJava" />
+      <element id="extracted-dir" path="$MAVEN_REPOSITORY$/com/google/code/gson/gson/2.10/gson-2.10.jar" path-in-jar="/" />
+    </root>
+  </artifact>
+</component>
