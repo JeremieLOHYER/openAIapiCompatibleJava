@@ -10,30 +10,76 @@ import java.net.HttpURLConnection;
 import java.net.MalformedURLException;
 import java.net.ProtocolException;
 import java.net.URL;
-import java.net.http.HttpClient;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.List;
 
 public class APICommunicator {
 
-    private HttpClient client;
-    private String webAddress;
+    private final String webAddress;
 
-    private static String preprompt = "you will do json formating on the next data coming. as following :  {'action': 'pausing','song': 'null'}" +
+    private final String model = "dolphin-2.1-mistral-7b";
+
+    private String preprompt = "you will do json formating on the next data coming. as following :  {'action': 'pausing','song': 'null'}" +
             "first, you will give the info if it's an action of 'playing', 'pausing' or 'stopping' a song. " +
             "then if it's an action of 'playing', you will tell what song is it telling to play, or you say 'null'. with the key word 'song' " +
                     "here you go : ";
 
-    private String prompt;
+    private String prompt = "";
+
+    private List<ContentBuilder.ContentClass> conversation;
+
+    private String temperature = "0.1";
+
+    public APICommunicator(String webAddress, String preprompt, String temperature) {
+        this.webAddress = webAddress;
+        this.preprompt = preprompt;
+        this.temperature = temperature;
+    }
+
+    public APICommunicator(String webAddress, String preprompt) {
+        this.webAddress = webAddress;
+        this.preprompt = preprompt;
+        this.temperature = "0.7";
+    }
 
     public APICommunicator(String webAddress) {
-        client = HttpClient.newBuilder().build();
         this.webAddress = webAddress;
-        this.prompt = "ecouter shrek";
     }
 
     public APICommunicator setPrompt(String prompt) {
         this.prompt = prompt;
         return this;
+    }
+
+    public APICommunicator addUserText(String text) {
+        if (conversation == null) {
+            conversation = new ArrayList<>();
+            this.conversation.add(new ContentBuilder.ContentClass(
+                    new ContentBuilder.Content[]{
+                            new ContentBuilder.ContentText("role","user"),
+                            new ContentBuilder.ContentText("content",preprompt),
+                    }
+            ));
+        }
+        this.conversation.add(new ContentBuilder.ContentClass(
+                new ContentBuilder.Content[]{
+                        new ContentBuilder.ContentText("role","user"),
+                        new ContentBuilder.ContentText("content",text),
+                }
+        ));
+        return this;
+    }
+
+    private void addLLMText(String text) {
+        if (conversation != null) {
+            this.conversation.add(new ContentBuilder.ContentClass(
+                    new ContentBuilder.Content[]{
+                            new ContentBuilder.ContentText("role","assistant"),
+                            new ContentBuilder.ContentText("content",text),
+                    }
+            ));
+        }
     }
 
     public String call() {
@@ -57,17 +103,36 @@ public class APICommunicator {
         connection.setRequestProperty("Content-Type", "application/json");
         connection.setDoOutput(true);
 
-        String jsonContent =
-                "{" +
-                "    \"model\": \"dolphin-2.1-mistral-7b\"," +
-                "    \"messages\": [" +
-                "        {\n" +
-                "            \"role\": \"user\"," +
-                "            \"content\": \"" + preprompt + " : " + prompt + "\"" +
-                "        }" +
-                "    ]," +
-                "    \"temperature\": 0.7" +
-                "}";
+        ContentBuilder contentBuilder = new ContentBuilder();
+
+        ContentBuilder.ContentClass[] contentClass;
+
+        if (conversation != null) {
+            contentClass = conversation.toArray(ContentBuilder.ContentClass[]::new);
+        } else {
+            contentClass = new ContentBuilder.ContentClass[]{
+                new ContentBuilder.ContentClass(new ContentBuilder.Content[]{
+                    new ContentBuilder.ContentText("role", "user"),
+                    new ContentBuilder.ContentText("content", preprompt + " " + prompt)
+                })
+            };
+        }
+
+        contentBuilder.addContent(
+            new ContentBuilder.ContentClass(
+                new ContentBuilder.Content[]{
+                    new ContentBuilder.ContentText("model",model),
+                    new ContentBuilder.ContentArray("messages", contentClass),
+                    new ContentBuilder.ContentText("temperature",this.temperature)
+                }
+            ), 0
+        );
+
+        String jsonContent = contentBuilder.build();
+
+        System.out.println(jsonContent);
+
+
         byte[] postData = jsonContent.getBytes(StandardCharsets.UTF_8);
         try {
             connection.getOutputStream().write(postData);
@@ -90,6 +155,10 @@ public class APICommunicator {
             }
 
             connection.disconnect();
+
+
+
+            addLLMText(getMessage(response.toString()));
 
             return getMessage(response.toString());
         } catch (IOException e) {
