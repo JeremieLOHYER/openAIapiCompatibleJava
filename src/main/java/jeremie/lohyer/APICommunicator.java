@@ -2,6 +2,7 @@ package jeremie.lohyer;
 
 import com.google.gson.Gson;
 import com.google.gson.JsonObject;
+import javafx.util.Callback;
 
 import java.io.*;
 import java.net.HttpURLConnection;
@@ -10,7 +11,8 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.Executor;
-import java.util.concurrent.Executors;
+import java.util.concurrent.FutureTask;
+import java.util.concurrent.RunnableFuture;
 import java.util.function.Function;
 
 import static jeremie.lohyer.ContentBuilder.*;
@@ -21,18 +23,13 @@ public class APICommunicator {
 
     private final String model = "dolphin-2.1-mistral-7b";
 
-    private String preprompt = "you will do json formating on the next data coming, as following :  {\"action\": [the action],\"song\": [the name of the song]} : \n" +
-            " - first, you will give the info if it's an action of 'playing', 'pausing' or 'stopping' a song.\n" +
-            " - then if it's an action of 'playing', you will tell what song is it telling to play, or you say 'null'. with the key word 'song'.\n" +
-                    "Here you go : ";
+    private String preprompt;
 
     private String prompt = "";
 
     private List<ContentClass> conversation;
 
-    private String temperature = "0.1";
-
-    private Executor executor = Executors.newSingleThreadExecutor();;
+    private String temperature;
 
     public APICommunicator(String webAddress, String preprompt, String temperature) {
         this.webAddress = webAddress;
@@ -46,56 +43,51 @@ public class APICommunicator {
         this.temperature = "0.7";
     }
 
-    public APICommunicator(String webAddress) {
-        this.webAddress = webAddress;
-    }
-
-    public void attachNewExecutor(Executor executor) {
-        this.executor = executor;
-    }
-
     public APICommunicator setPrompt(String prompt) {
         this.prompt = prompt;
         return this;
     }
 
     public APICommunicator addUserText(String text) {
+        return addText("User", text);
+    }
+
+    public APICommunicator addLLMText(String text) {
+        return addText("assistant", text);
+    }
+
+    public APICommunicator addText(String role, String text) {
         if (conversation == null) {
             conversation = new ArrayList<>();
             this.conversation.add(new ContentClass(
                     new Content[]{
-                            new ContentText("role","user"),
+                            new ContentText("role","System"),
                             new ContentText("content",preprompt),
                     }
             ));
         }
         this.conversation.add(new ContentClass(
                 new Content[]{
-                        new ContentText("role","user"),
+                        new ContentText("role",role),
                         new ContentText("content",text),
                 }
         ));
         return this;
     }
 
-    private void addLLMText(String text) {
-        if (conversation != null) {
-            this.conversation.add(new ContentClass(
-                    new Content[]{
-                            new ContentText("role","assistant"),
-                            new ContentText("content",text),
-                    }
-            ));
-        }
+    public void call(Executor executor, Function<String, Void> callBack) {
+        executor.execute(() -> callBack.apply(asyncCall()));
     }
 
-    public void call(Function<String, Void> callBack) {
-        executor.execute(() -> {
-            callBack.apply(asyncCall());
-        });
+    public void call(boolean additive, Function<String, Void> callBack) {
+        new Thread(() -> callBack.apply(asyncCall(additive))).start();
     }
 
     protected String asyncCall() {
+        return asyncCall(true);
+    }
+
+    protected String asyncCall(boolean additive) {
         HttpURLConnection connection;
         try {
             connection = (HttpURLConnection) new URL(webAddress).openConnection();
@@ -165,8 +157,9 @@ public class APICommunicator {
             connection.disconnect();
 
 
-
-            addLLMText(getMessage(response.toString()));
+            if (additive) {
+                addLLMText(getMessage(response.toString()));
+            }
 
             return getMessage(response.toString());
         } catch (IOException e) {

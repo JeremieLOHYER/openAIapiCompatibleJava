@@ -4,7 +4,7 @@ public class Main {
     public static void main(String[] args) {
         APICommunicator communicator = null;
 
-        communicator = new APICommunicator("http://192.168.1.46:5000/v1/chat/completions");
+        communicator = new APICommunicator("http://192.168.1.46:5000/v1/chat/completions", "");
         communicator.setPrompt("changer pour écouter la teuf du samedi soir");
         System.out.println(communicator.asyncCall());
 
