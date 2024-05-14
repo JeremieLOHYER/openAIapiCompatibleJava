@@ -43,6 +43,11 @@ public class APICommunicator {
         this.temperature = "0.7";
     }
 
+    public APICommunicator changePreprompt(String preprompt) {
+        this.preprompt = preprompt;
+        return this;
+    }
+
     public APICommunicator setPrompt(String prompt) {
         this.prompt = prompt;
         return this;
