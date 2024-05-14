@@ -3,16 +3,17 @@ package jeremie.lohyer;
 import com.google.gson.Gson;
 import com.google.gson.JsonObject;
 
-import java.io.BufferedReader;
-import java.io.IOException;
-import java.io.InputStreamReader;
+import java.io.*;
 import java.net.HttpURLConnection;
-import java.net.MalformedURLException;
-import java.net.ProtocolException;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.Executor;
+import java.util.concurrent.Executors;
+import java.util.function.Function;
+
+import static jeremie.lohyer.ContentBuilder.*;
 
 public class APICommunicator {
 
@@ -20,16 +21,18 @@ public class APICommunicator {
 
     private final String model = "dolphin-2.1-mistral-7b";
 
-    private String preprompt = "you will do json formating on the next data coming. as following :  {'action': 'pausing','song': 'null'}" +
-            "first, you will give the info if it's an action of 'playing', 'pausing' or 'stopping' a song. " +
-            "then if it's an action of 'playing', you will tell what song is it telling to play, or you say 'null'. with the key word 'song' " +
-                    "here you go : ";
+    private String preprompt = "you will do json formating on the next data coming, as following :  {\"action\": [the action],\"song\": [the name of the song]} : \n" +
+            " - first, you will give the info if it's an action of 'playing', 'pausing' or 'stopping' a song.\n" +
+            " - then if it's an action of 'playing', you will tell what song is it telling to play, or you say 'null'. with the key word 'song'.\n" +
+                    "Here you go : ";
 
     private String prompt = "";
 
-    private List<ContentBuilder.ContentClass> conversation;
+    private List<ContentClass> conversation;
 
     private String temperature = "0.1";
+
+    private Executor executor = Executors.newSingleThreadExecutor();;
 
     public APICommunicator(String webAddress, String preprompt, String temperature) {
         this.webAddress = webAddress;
@@ -47,6 +50,10 @@ public class APICommunicator {
         this.webAddress = webAddress;
     }
 
+    public void attachNewExecutor(Executor executor) {
+        this.executor = executor;
+    }
+
     public APICommunicator setPrompt(String prompt) {
         this.prompt = prompt;
         return this;
@@ -55,17 +62,17 @@ public class APICommunicator {
     public APICommunicator addUserText(String text) {
         if (conversation == null) {
             conversation = new ArrayList<>();
-            this.conversation.add(new ContentBuilder.ContentClass(
-                    new ContentBuilder.Content[]{
-                            new ContentBuilder.ContentText("role","user"),
-                            new ContentBuilder.ContentText("content",preprompt),
+            this.conversation.add(new ContentClass(
+                    new Content[]{
+                            new ContentText("role","user"),
+                            new ContentText("content",preprompt),
                     }
             ));
         }
-        this.conversation.add(new ContentBuilder.ContentClass(
-                new ContentBuilder.Content[]{
-                        new ContentBuilder.ContentText("role","user"),
-                        new ContentBuilder.ContentText("content",text),
+        this.conversation.add(new ContentClass(
+                new Content[]{
+                        new ContentText("role","user"),
+                        new ContentText("content",text),
                 }
         ));
         return this;
@@ -73,57 +80,52 @@ public class APICommunicator {
 
     private void addLLMText(String text) {
         if (conversation != null) {
-            this.conversation.add(new ContentBuilder.ContentClass(
-                    new ContentBuilder.Content[]{
-                            new ContentBuilder.ContentText("role","assistant"),
-                            new ContentBuilder.ContentText("content",text),
+            this.conversation.add(new ContentClass(
+                    new Content[]{
+                            new ContentText("role","assistant"),
+                            new ContentText("content",text),
                     }
             ));
         }
     }
 
-    public String call() {
-        URL url = null;
+    public void call(Function<String, Void> callBack) {
+        executor.execute(() -> {
+            callBack.apply(asyncCall());
+        });
+    }
+
+    protected String asyncCall() {
+        HttpURLConnection connection;
         try {
-            url = new URL(webAddress);
-        } catch (MalformedURLException e) {
-            System.out.println("url échoué");
-        }
-        HttpURLConnection connection = null;
-        try {
-            connection = (HttpURLConnection) url.openConnection();
-        } catch (IOException e) {
-            System.out.println("connection échouée");
-        }
-        try {
+            connection = (HttpURLConnection) new URL(webAddress).openConnection();
             connection.setRequestMethod("POST");
-        } catch (ProtocolException e) {
-            System.out.println("request échouée");
+        } catch (Exception e) {
+            return "request échouée";
         }
         connection.setRequestProperty("Content-Type", "application/json");
         connection.setDoOutput(true);
 
         ContentBuilder contentBuilder = new ContentBuilder();
-
-        ContentBuilder.ContentClass[] contentClass;
+        ContentClass[] contentClass;
 
         if (conversation != null) {
-            contentClass = conversation.toArray(ContentBuilder.ContentClass[]::new);
+            contentClass = new ContentClass[conversation.size()];
+            conversation.toArray(contentClass);
         } else {
-            contentClass = new ContentBuilder.ContentClass[]{
-                new ContentBuilder.ContentClass(new ContentBuilder.Content[]{
-                    new ContentBuilder.ContentText("role", "user"),
-                    new ContentBuilder.ContentText("content", preprompt + " " + prompt)
+            contentClass = new ContentClass[]{
+                new ContentClass(new Content[]{
+                    new ContentText("role", "user"),
+                    new ContentText("content", preprompt + " " + prompt)
                 })
             };
         }
-
         contentBuilder.addContent(
-            new ContentBuilder.ContentClass(
-                new ContentBuilder.Content[]{
-                    new ContentBuilder.ContentText("model",model),
-                    new ContentBuilder.ContentArray("messages", contentClass),
-                    new ContentBuilder.ContentText("temperature",this.temperature)
+            new ContentClass(
+                new Content[]{
+                    new ContentText("model",model),
+                    new ContentArray("messages", contentClass),
+                    new ContentText("temperature",this.temperature)
                 }
             ), 0
         );
@@ -134,10 +136,16 @@ public class APICommunicator {
 
 
         byte[] postData = jsonContent.getBytes(StandardCharsets.UTF_8);
+
         try {
-            connection.getOutputStream().write(postData);
+            OutputStream stream = connection.getOutputStream();
+            if (stream == null) {
+                return "output stream is null";
+            } else {
+                stream.write(postData);
+            }
         } catch (IOException e) {
-            System.out.println("output stream echoue");
+            return "output stream echoue";
         }
 
 
@@ -151,7 +159,7 @@ public class APICommunicator {
                     response.append(inputLine);
                 }
             } catch (IOException e) {
-                System.out.println("line échouée");
+                return "line échouée";
             }
 
             connection.disconnect();
@@ -162,21 +170,26 @@ public class APICommunicator {
 
             return getMessage(response.toString());
         } catch (IOException e) {
-            in = new BufferedReader(new InputStreamReader(connection.getErrorStream()));
-            String inputLine;
-            try {
-                while ((inputLine = in.readLine()) != null) {
-                    response.append(inputLine);
+            System.out.println("exception : " + e.getMessage());
+            InputStream error = connection.getErrorStream();
+            if (error != null) {
+                in = new BufferedReader(new InputStreamReader(error));
+                String inputLine;
+                try {
+                    while ((inputLine = in.readLine()) != null) {
+                        response.append(inputLine);
+                    }
+                } catch (IOException e1) {
+                    return "line échouée";
                 }
-            } catch (IOException e1) {
-                System.out.println("line échouée");
-            }
 
-            connection.disconnect();
+                connection.disconnect();
+            } else {
+                response.append(e.getMessage());
+            }
 
             return response.toString();
         }
-
     }
 
     public static String getMessage(String json) {

@@ -1,7 +1,6 @@
 package jeremie.lohyer;
 
 import java.util.Arrays;
-import java.util.function.Function;
 
 public class ContentBuilder {
 
@@ -75,36 +74,44 @@ public class ContentBuilder {
     }
 
     public ContentBuilder addContent(ContentClass c, int height) {
-        //addHeight(height);
-        this.content += "{";
+        addHeight(height);
+        this.content += "{\n";
         for (int i = 0; i < c.content.length - 1; i++) {
             addContent(c.content[i], height);
-            this.content += ",";
+            this.content += ",\n";
         }
         addContent(c.content[c.content.length - 1], height);
-        //this.content += "\n";
-        //addHeight(height);
+        this.content += "\n";
+        addHeight(height);
         this.content += "}";
         return this;
     }
 
     public ContentBuilder addContent(ContentText c, int height) {
-        //addHeight(height);
-        this.content += "\"" + c.name + "\": \"" + c.content + "\"" ;
+        addHeight(height);
+        this.content += "\"" + c.name + "\": \"" + escapeChars(c) + "\"" ;
         return this;
+    }
+
+    private static String escapeChars(ContentText c) {
+        return c.content
+                .replaceAll("\n", "\\\\n")
+                .replaceAll("\t", "\\\\t")
+                .replaceAll("\r", "\\\\r")
+                .replaceAll("\"","\\\\\"");
     }
 
 
     public ContentBuilder addContent(ContentArray c, int height) {
-        //addHeight(height);
-        this.content += "\"" + c.name + "\": [";
+        addHeight(height);
+        this.content += "\"" + c.name + "\": [\n";
         for (int i = 0; i < c.content.length - 1; i++) {
             addContent(c.content[i], height + 1);
-            this.content += ",";
+            this.content += ",\n";
         }
         addContent(c.content[c.content.length - 1], height + 1);
-        //this.content += "\n";
-        //addHeight(height);
+        this.content += "\n";
+        addHeight(height);
         this.content += "]";
         return this;
     }
