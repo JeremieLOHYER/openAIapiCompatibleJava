@@ -80,8 +80,8 @@ public class APICommunicator {
         return this;
     }
 
-    public void call(Executor executor, Function<String, Void> callBack) {
-        executor.execute(() -> callBack.apply(asyncCall()));
+    public void call(boolean additive, Executor executor, Function<String, Void> callBack) {
+        executor.execute(() -> callBack.apply(asyncCall(additive)));
     }
 
     public void call(boolean additive, Function<String, Void> callBack) {
